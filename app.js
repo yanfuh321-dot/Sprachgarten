@@ -63,10 +63,11 @@ function streak(){ let n=0; const d=new Date(); if(!(S.xp[dkey(d)]>0)) d.setDate
 /* ---------- speech ---------- */
 const FEM=/(anna|petra|helena|katja|hedda|marlene|vicki|amala|seraphina|katharina|louisa|elke|klara|tanja|female|weiblich)/i;
 const MASC=/(markus|yannick|stefan|hans|conrad|martin|viktor|killian|florian|kasper|ralf|bernd|christoph|jonas|männlich|\bmale\b)/i;
+const isDeVoice=x=>/^de([-_]|$)|^deu/i.test(x.lang||'')||/deutsch|german|allemand|alemán|tedesco|德语|德文|德國|德国|ドイツ/i.test(x.name||'');
 const NOVEL=/(albert|bad news|bahh|bells|boing|bubbles|cellos|wobble|good news|jester|organ|superstar|trinoids|whisper|zarvox|grandma|grandpa|eddy|\bflo\b|reed|rocko|sandy|shelley)/i;
 const TTS={
  ok:'speechSynthesis' in window&&'SpeechSynthesisUtterance' in window,
- voices:[],sid:0,res:null,warned:false,loaded:false,
+ voices:[],all:[],sid:0,res:null,warned:false,loaded:false,
  init(){
   if(!this.ok) return;
   try{speechSynthesis.onvoiceschanged=()=>this.load();}catch(e){}
@@ -75,13 +76,14 @@ const TTS={
  load(){
   let v=[]; try{v=speechSynthesis.getVoices()||[];}catch(e){}
   if(v.length) this.loaded=true;
-  const de=v.filter(x=>/^de([-_]|$)|^deu/i.test(x.lang||'')||/deutsch|german/i.test(x.name||''));
+  const de=v.filter(isDeVoice);
   const sc=x=>(NOVEL.test(x.name)?-10:0)+(/natural|neural|premium|enhanced|online/i.test(x.name)?4:0)+(/google/i.test(x.name)?3:0)+(/de[-_]de/i.test(x.lang)?1:0);
   de.sort((a,b)=>sc(b)-sc(a));
-  const changed=de.length!==this.voices.length; this.voices=de;
+  const changed=de.length!==this.voices.length||v.length!==this.all.length; this.voices=de; this.all=v.slice();
   if(changed||v.length) document.dispatchEvent(new CustomEvent('sg-voices'));
  },
- base(){ return this.voices.find(v=>v.voiceURI===S.voice)||this.voices[0]||null; },
+ chosen(){ if(!S.voice) return null; return this.all.find(v=>v.voiceURI===S.voice)||this.all.find(v=>v.name===S.voice)||null; },
+ base(){ return this.chosen()||this.voices[0]||null; },
  pick(g){
   const vs=this.voices,b=this.base(); if(!b) return {voice:null,pitch:g==='m'?0.8:1};
   const isF=v=>FEM.test(v.name), isM=v=>MASC.test(v.name)&&!isF(v), ok=v=>!NOVEL.test(v.name);
@@ -102,7 +104,7 @@ const TTS={
     if(i>=items.length) return fin(true);
     const idx=i++, it=items[idx];
     const u=new SpeechSynthesisUtterance(it.text); u.lang='de-DE';
-    const p=this.pick(it.g); if(p.voice) u.voice=p.voice; u.pitch=p.pitch; u.rate=rate;
+    const p=this.pick(it.g); if(p.voice){ try{u.voice=p.voice;}catch(e){} } u.pitch=p.pitch; u.rate=rate;
     let done=false; const go=()=>{ if(done) return; done=true; if(sid!==this.sid) return; setTimeout(next,it.pause!=null?it.pause:150); };
     u.onend=go; u.onerror=go;
     if(o.onitem) o.onitem(idx);
@@ -121,7 +123,7 @@ const say=(text,{g='',cls='',label='Anhören'}={})=>`<button type="button" class
 
 function voiceNoticeHtml(){
  if(!TTS.ok) return `<div class="notice"><b>Keine Sprachausgabe verfügbar</b>Dieser Browser kann keine Texte vorlesen. Öffne die Seite am besten in Chrome, Safari oder Edge. <span class="zh">此浏览器不支持语音朗读，请使用 Chrome、Safari 或 Edge。</span></div>`;
- if(TTS.loaded&&!TTS.voices.length) return `<div class="notice"><b>Keine deutsche Stimme gefunden</b>Deshalb wird mit englischem Akzent vorgelesen. So installierst du eine deutsche Stimme:<br>Android: Einstellungen › Text-in-Sprache-Ausgabe › Zahnrad bei „Sprachdienste von Google“ › Sprachdaten installieren › Deutsch (Deutschland). Danach Chrome ganz schließen und neu öffnen.<br>iPhone: Einstellungen › Bedienungshilfen › Gesprochene Inhalte › Stimmen › Deutsch.<br><span class="zh">未找到德语语音，所以朗读带英语口音。安卓：设置 › 文字转语音输出 › “Google 语音服务”旁的齿轮 › 安装语音数据 › 德语（德国），然后完全关闭并重新打开 Chrome。</span></div>`;
+ if(TTS.loaded&&!TTS.voices.length&&!TTS.chosen()) return `<div class="notice"><b>Keine deutsche Stimme gefunden</b>Deshalb wird mit englischem Akzent vorgelesen. Was hilft:<br>1. Eine deutsche Stimme installieren. Android: Einstellungen › Text-in-Sprache-Ausgabe. iPhone: Einstellungen › Bedienungshilfen › Gesprochene Inhalte › Stimmen › Deutsch.<br>2. Die Seite in Chrome öffnen, nicht im WeChat- oder Handy-Browser.<br>3. Chrome neu starten: Einstellungen › Apps › Chrome › „Beenden erzwingen“.<br>4. In Sprachgarten unter Einstellungen › Stimme die deutsche Stimme wählen.<br><span class="zh">未找到德语语音。请：① 安装德语语音（设置 › 文字转语音输出）；② 用 Chrome 打开本网站，不要用微信或手机自带浏览器；③ 在应用设置里“强行停止” Chrome 后重新打开；④ 在本网站“设置 › 声音”中选择德语语音。</span></div>`;
  return '';
 }
 function refreshNotices(){ $$('[data-voice-notice]').forEach(n=>n.innerHTML=voiceNoticeHtml()); }
@@ -694,9 +696,17 @@ function openSettings(){
  </div></div>`);
  document.body.append(m);
  const sel=$('#s-voice',m);
- const fill=()=>{ sel.innerHTML=`<option value="">Automatisch</option>`+TTS.voices.map(x=>`<option value="${esc(x.voiceURI)}"${x.voiceURI===S.voice?' selected':''}>${esc(x.name)} (${esc(x.lang)})</option>`).join(''); $('#s-vnote',m).textContent=!TTS.ok?'Dieser Browser unterstützt keine Sprachausgabe.':TTS.voices.length?`${TTS.voices.length} deutsche ${TTS.voices.length===1?'Stimme':'Stimmen'} gefunden.`:'Keine deutsche Stimme gefunden. Installiere eine unter „Text-in-Sprache-Ausgabe“ (Android) bzw. „Gesprochene Inhalte“ (iPhone).'; };
- fill(); document.addEventListener('sg-voices',fill);
- sel.onchange=()=>{ S.voice=sel.value; save(); };
+ const fill=()=>{
+  const all=TTS.all, de=TTS.voices, others=all.filter(x=>!de.includes(x)), cur=TTS.chosen();
+  const opt=x=>`<option value="${esc(x.voiceURI||x.name)}"${x===cur?' selected':''}>${esc(x.name)} (${esc(x.lang||'?')})</option>`;
+  sel.innerHTML=`<option value="">Automatisch${de.length?'':' (keine deutsche Stimme erkannt)'}</option>`+(de.length?`<optgroup label="Deutsch">${de.map(opt).join('')}</optgroup>`:'')+(others.length?`<optgroup label="${de.length?'Andere Sprachen':'Alle Stimmen'}">${others.map(opt).join('')}</optgroup>`:'');
+  $('#s-vnote',m).textContent=!TTS.ok?'Dieser Browser unterstützt keine Sprachausgabe.'
+   :!all.length?'Der Browser meldet noch keine Stimmen. Starte Chrome neu (Einstellungen › Apps › Chrome › Beenden erzwingen).'
+   :de.length?`${de.length} deutsche ${de.length===1?'Stimme':'Stimmen'} gefunden (von ${all.length} insgesamt).`
+   :`Der Browser meldet ${all.length} Stimmen, aber keine erkennbar deutsche. Steht in der Auswahlliste eine deutsche Stimme, wähle sie direkt aus. Sonst Chrome über Einstellungen › Apps › Chrome › „Beenden erzwingen“ neu starten.`;
+ };
+ TTS.load(); fill(); document.addEventListener('sg-voices',fill);
+ sel.onchange=()=>{ S.voice=sel.value; save(); refreshNotices(); if(sel.value) TTS.say('Hallo! Das ist meine Stimme.'); };
  $('[data-a=test]',m).onclick=()=>TTS.say('Hallo! Schön, dass du Deutsch lernst.');
  $('#s-name',m).oninput=e=>{ S.name=e.target.value.trim(); save(); };
  $('#s-zh',m).onchange=e=>{ S.zh=e.target.checked; save(); applyTheme(); };
