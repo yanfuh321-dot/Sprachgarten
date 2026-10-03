@@ -69,13 +69,17 @@ const TTS={
  voices:[],sid:0,res:null,warned:false,loaded:false,
  init(){
   if(!this.ok) return;
-  const load=()=>{ let v=[]; try{v=speechSynthesis.getVoices()||[];}catch(e){}
-   if(v.length) this.loaded=true;
-   const de=v.filter(x=>/^de([-_]|$)/i.test(x.lang||''));
-   const sc=x=>(NOVEL.test(x.name)?-10:0)+(/natural|neural|premium|enhanced|online/i.test(x.name)?4:0)+(/google/i.test(x.name)?3:0)+(/de[-_]de/i.test(x.lang)?1:0);
-   de.sort((a,b)=>sc(b)-sc(a)); this.voices=de; document.dispatchEvent(new CustomEvent('sg-voices')); };
-  load(); try{speechSynthesis.onvoiceschanged=load;}catch(e){}
-  setTimeout(load,800); setTimeout(()=>{this.loaded=true;load();},2500);
+  try{speechSynthesis.onvoiceschanged=()=>this.load();}catch(e){}
+  this.load(); setTimeout(()=>this.load(),800); setTimeout(()=>{this.loaded=true;this.load();},2500);
+ },
+ load(){
+  let v=[]; try{v=speechSynthesis.getVoices()||[];}catch(e){}
+  if(v.length) this.loaded=true;
+  const de=v.filter(x=>/^de([-_]|$)|^deu/i.test(x.lang||'')||/deutsch|german/i.test(x.name||''));
+  const sc=x=>(NOVEL.test(x.name)?-10:0)+(/natural|neural|premium|enhanced|online/i.test(x.name)?4:0)+(/google/i.test(x.name)?3:0)+(/de[-_]de/i.test(x.lang)?1:0);
+  de.sort((a,b)=>sc(b)-sc(a));
+  const changed=de.length!==this.voices.length; this.voices=de;
+  if(changed||v.length) document.dispatchEvent(new CustomEvent('sg-voices'));
  },
  base(){ return this.voices.find(v=>v.voiceURI===S.voice)||this.voices[0]||null; },
  pick(g){
@@ -88,6 +92,7 @@ const TTS={
  stop(){ this.sid++; if(this.ok){try{speechSynthesis.cancel();}catch(e){}} const r=this.res; this.res=null; if(r) r(false); $$('.playing').forEach(x=>x.classList.remove('playing')); },
  seq(items,o={}){
   if(!this.ok){ if(!this.warned){toast('Dieser Browser kann leider keine Sprache ausgeben.');this.warned=true;} return Promise.resolve(false); }
+  if(!this.voices.length) this.load();
   this.stop(); const sid=this.sid, rate=o.rate||S.rate;
   return new Promise(resolve=>{
    this.res=resolve; let i=0;
@@ -116,7 +121,7 @@ const say=(text,{g='',cls='',label='Anhören'}={})=>`<button type="button" class
 
 function voiceNoticeHtml(){
  if(!TTS.ok) return `<div class="notice"><b>Keine Sprachausgabe verfügbar</b>Dieser Browser kann keine Texte vorlesen. Öffne die Seite am besten in Chrome, Safari oder Edge. <span class="zh">此浏览器不支持语音朗读，请使用 Chrome、Safari 或 Edge。</span></div>`;
- if(TTS.loaded&&!TTS.voices.length) return `<div class="notice"><b>Keine deutsche Stimme gefunden</b>Die Texte werden trotzdem vorgelesen, klingen aber vielleicht nicht deutsch. Installiere in den Systemeinstellungen eine deutsche Stimme (iPhone: Einstellungen › Bedienungshilfen › Gesprochene Inhalte › Stimmen › Deutsch). <span class="zh">未找到德语语音，请在系统设置中安装德语语音。</span></div>`;
+ if(TTS.loaded&&!TTS.voices.length) return `<div class="notice"><b>Keine deutsche Stimme gefunden</b>Deshalb wird mit englischem Akzent vorgelesen. So installierst du eine deutsche Stimme:<br>Android: Einstellungen › Text-in-Sprache-Ausgabe › Zahnrad bei „Sprachdienste von Google“ › Sprachdaten installieren › Deutsch (Deutschland). Danach Chrome ganz schließen und neu öffnen.<br>iPhone: Einstellungen › Bedienungshilfen › Gesprochene Inhalte › Stimmen › Deutsch.<br><span class="zh">未找到德语语音，所以朗读带英语口音。安卓：设置 › 文字转语音输出 › “Google 语音服务”旁的齿轮 › 安装语音数据 › 德语（德国），然后完全关闭并重新打开 Chrome。</span></div>`;
  return '';
 }
 function refreshNotices(){ $$('[data-voice-notice]').forEach(n=>n.innerHTML=voiceNoticeHtml()); }
@@ -689,7 +694,7 @@ function openSettings(){
  </div></div>`);
  document.body.append(m);
  const sel=$('#s-voice',m);
- const fill=()=>{ sel.innerHTML=`<option value="">Automatisch</option>`+TTS.voices.map(x=>`<option value="${esc(x.voiceURI)}"${x.voiceURI===S.voice?' selected':''}>${esc(x.name)} (${esc(x.lang)})</option>`).join(''); $('#s-vnote',m).textContent=!TTS.ok?'Dieser Browser unterstützt keine Sprachausgabe.':TTS.voices.length?`${TTS.voices.length} deutsche ${TTS.voices.length===1?'Stimme':'Stimmen'} gefunden.`:'Noch keine deutsche Stimme gefunden.'; };
+ const fill=()=>{ sel.innerHTML=`<option value="">Automatisch</option>`+TTS.voices.map(x=>`<option value="${esc(x.voiceURI)}"${x.voiceURI===S.voice?' selected':''}>${esc(x.name)} (${esc(x.lang)})</option>`).join(''); $('#s-vnote',m).textContent=!TTS.ok?'Dieser Browser unterstützt keine Sprachausgabe.':TTS.voices.length?`${TTS.voices.length} deutsche ${TTS.voices.length===1?'Stimme':'Stimmen'} gefunden.`:'Keine deutsche Stimme gefunden. Installiere eine unter „Text-in-Sprache-Ausgabe“ (Android) bzw. „Gesprochene Inhalte“ (iPhone).'; };
  fill(); document.addEventListener('sg-voices',fill);
  sel.onchange=()=>{ S.voice=sel.value; save(); };
  $('[data-a=test]',m).onclick=()=>TTS.say('Hallo! Schön, dass du Deutsch lernst.');
